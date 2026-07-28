@@ -1,0 +1,6 @@
+import type { Bootstrap } from './types';
+export const API_URL=import.meta.env.VITE_API_URL??'';
+let token=localStorage.getItem('ci360-token');
+export const setToken=(value:string|null)=>{token=value;if(value)localStorage.setItem('ci360-token',value);else localStorage.removeItem('ci360-token');};
+async function request<T>(path:string,options:RequestInit={}){const response=await fetch(API_URL+path,{...options,headers:{'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`}:{}) ,...(options.headers||{})}});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.error||'Request failed');return data as T;}
+export const api={login:(id:string,password:string)=>request<{token:string;user:any}>('/api/auth/login',{method:'POST',body:JSON.stringify({id,password})}),bootstrap:()=>request<Bootstrap>('/api/bootstrap'),createJob:(data:any)=>request('/api/jobs',{method:'POST',body:JSON.stringify(data)}),updateJob:(id:string,data:any)=>request(`/api/jobs/${id}`,{method:'PATCH',body:JSON.stringify(data)}),saveSettings:(data:any)=>request('/api/settings',{method:'PUT',body:JSON.stringify(data)}),createClient:(data:any)=>request('/api/clients',{method:'POST',body:JSON.stringify(data)}),updateClient:(id:string,data:any)=>request(`/api/clients/${id}`,{method:'PATCH',body:JSON.stringify(data)})};
