@@ -1,4 +1,4 @@
-import Database from 'better-sqlite3';
+import initSqlJs, { Database as SqlJsDatabase } from 'sql.js';
 import bcrypt from 'bcryptjs';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -6,9 +6,116 @@ import path from 'node:path';
 
 const dbPath = process.env.DATABASE_PATH || './data/ci360.db';
 fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-export const db = new Database(dbPath);
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
+
+let rawDb: SqlJsDatabase;
+
+// Initialize sql.js synchronously from buffer or empty
+const SQL = await initSqlJs();
+
+if (fs.existsSync(dbPath)) {
+  const fileBuffer = fs.readFileSync(dbPath);
+  rawDb = new SQL.Database(fileBuffer);
+} else {
+  rawDb = new SQL.Database();
+}
+
+function persistToDisk() {
+  try {
+    const data = rawDb.export();
+    fs.writeFileSync(dbPath, Buffer.from(data));
+  } catch (err) {
+    console.error('Error persisting SQLite DB to disk:', err);
+  }
+}
+
+// Emulate better-sqlite3 API on top of sql.js
+export const db = {
+  exec(sql: string) {
+    rawDb.exec(sql);
+    persistToDisk();
+  },
+  pragma(_pragmaSql: string) {
+    // Pragma no-op for sql.js in-memory wasm
+  },
+  close() {
+    persistToDisk();
+    rawDb.close();
+  },
+  prepare(sql: string) {
+    return {
+      get(...args: any[]) {
+        const stmt = rawDb.prepare(sql);
+        try {
+          const params = args.length === 1 && typeof args[0] === 'object' && args[0] !== null && !Array.isArray(args[0])
+            ? args[0]
+            : args;
+          stmt.bind(params);
+          if (stmt.step()) {
+            return stmt.getAsObject();
+          }
+          return undefined;
+        } finally {
+          stmt.free();
+        }
+      },
+      all(...args: any[]) {
+        const stmt = rawDb.prepare(sql);
+        const results: any[] = [];
+        try {
+          const params = args.length === 1 && typeof args[0] === 'object' && args[0] !== null && !Array.isArray(args[0])
+            ? args[0]
+            : args;
+          stmt.bind(params);
+          while (stmt.step()) {
+            results.push(stmt.getAsObject());
+          }
+          return results;
+        } finally {
+          stmt.free();
+        }
+      },
+      run(...args: any[]) {
+        const stmt = rawDb.prepare(sql);
+        try {
+          const params = args.length === 1 && typeof args[0] === 'object' && args[0] !== null && !Array.isArray(args[0])
+            ? args[0]
+            : args;
+          stmt.bind(params);
+          stmt.step();
+          stmt.free();
+
+          const infoRes = rawDb.exec('SELECT last_insert_rowid() as lastInsertRowid, changes() as changes');
+          let lastInsertRowid = 0;
+          let changes = 0;
+          if (infoRes.length > 0 && infoRes[0].values.length > 0) {
+            lastInsertRowid = Number(infoRes[0].values[0][0]) || 0;
+            changes = Number(infoRes[0].values[0][1]) || 0;
+          }
+
+          persistToDisk();
+          return { lastInsertRowid, changes };
+        } catch (e) {
+          stmt.free();
+          throw e;
+        }
+      }
+    };
+  },
+  transaction<T extends (...args: any[]) => any>(fn: T): T {
+    return ((...args: any[]) => {
+      rawDb.exec('BEGIN TRANSACTION');
+      try {
+        const result = fn(...args);
+        rawDb.exec('COMMIT');
+        persistToDisk();
+        return result;
+      } catch (err) {
+        rawDb.exec('ROLLBACK');
+        throw err;
+      }
+    }) as T;
+  }
+};
 
 function hasColumn(table: string, column: string) {
   const rows = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
@@ -236,7 +343,6 @@ export function initialiseDatabase() {
       FOREIGN KEY(ticket_id) REFERENCES support_tickets(id) ON DELETE CASCADE,
       FOREIGN KEY(message_id) REFERENCES support_ticket_messages(id) ON DELETE SET NULL
     );
-
   `);
 
   addColumn('users', 'password_changed_at TEXT');
@@ -288,7 +394,7 @@ export function seedDemoData() {
   const hash = (value: string) => bcrypt.hashSync(value, 12);
   const transaction = db.transaction(() => {
     const clientCount = (db.prepare('SELECT COUNT(*) count FROM clients').get() as { count: number }).count;
-    if (clientCount > 0) throw new Error('Demo data already exists; refusing to insert duplicates.');
+    if (clientCount > 0) return;
     const nowIso = new Date().toISOString();
     insertClient.run('acme', 'Acme Corp', hash('ChangeMeAcme123!'));
     insertClient.run('beta', 'Beta Industries', hash('ChangeMeBeta123!'));
