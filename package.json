@@ -11,7 +11,7 @@
   },
   "scripts": {
     "dev": "concurrently \"npm run dev -w server\" \"npm run dev -w client\"",
-    "build": "npm run build -w server && npm run build -w client",
+    "build": "npm run build -w server && npm run build -w client && node -e \"const fs=require('fs'); try{fs.mkdirSync('server/dist/public', {recursive:true}); fs.cpSync('client/dist', 'server/dist/public', {recursive:true});}catch(e){}\"",
     "start": "node server/dist/index.js",
     "typecheck": "npm run typecheck -w server && npm run typecheck -w client",
     "create-admin": "npm run create-admin -w server",
