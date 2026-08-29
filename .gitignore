@@ -9,3 +9,4 @@ client/dist
 *.log
 *.tsbuildinfo
 .DS_Store
+.codex-run

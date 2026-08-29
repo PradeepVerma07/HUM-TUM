@@ -1,38 +1,598 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { io } from 'socket.io-client';
-import { api, API_URL, setToken } from './api';
+import { api, API_URL, getToken, setToken } from './api';
 import type { Bootstrap, Job, JobStatus, Settings } from './types';
 import { addWorkingHours } from './tat';
+import SupportTickets from './SupportTickets';
 import './styles.css';
 
-const statusLabels:Record<JobStatus,string>={submitted:'Submitted',under_review:'Under Review',in_progress:'In Progress',waiting_client:'Waiting for Client',revision_requested:'Revision Requested',on_hold:'On Hold',completed:'Completed',cancelled:'Cancelled'};
-const fmt=(value:string|Date)=>new Date(value).toLocaleString('en-IN',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
+const statusLabels: Record<JobStatus, string> = {
+  submitted: 'Submitted',
+  under_review: 'Under Review',
+  in_progress: 'In Progress',
+  waiting_client: 'Waiting for Client',
+  revision_requested: 'Revision Requested',
+  on_hold: 'On Hold',
+  completed: 'Completed',
+  cancelled: 'Cancelled',
+};
+const fmt = (value: string | Date) =>
+  new Date(value).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
-export default function App(){
- const [auth,setAuth]=useState(Boolean(localStorage.getItem('ci360-token'))); const [data,setData]=useState<Bootstrap|null>(null); const [error,setError]=useState(''); const [tab,setTab]=useState('overview');
- const load=useCallback(async()=>{try{setData(await api.bootstrap());setError('');}catch(e:any){if(e.message.includes('Session')){setToken(null);setAuth(false);}else setError(e.message);}},[]);
- useEffect(()=>{if(!auth)return;load();const socket=io(API_URL||undefined);socket.on('data:changed',load);return()=>{socket.disconnect();};},[auth,load]);
- if(!auth)return <Login onLogin={()=>setAuth(true)}/>;
- if(!data)return <div className="center">{error||'Loading CI360 Job Board...'}</div>;
- const tabs=data.user.role==='admin'?[['overview','Overview'],['submit','Submit a Job'],['jobs','All Jobs'],['settings','TAT Standards'],['clients','Manage Clients']]:[['overview','Overview'],['submit','Submit a Job'],['jobs','My Jobs']];
- const logout=()=>{setToken(null);setAuth(false);setData(null);};
- return <main className="app"><header><div><h1>CI360<span>degrees</span></h1><p>Realtime Job Board</p></div><div className="identity">Logged in as <b>{data.user.name}</b><button onClick={logout}>Log out</button></div></header>
- <nav>{tabs.map(([id,label])=><button key={id} className={tab===id?'active':''} onClick={()=>setTab(id)}>{label}</button>)}</nav>
- {error&&<div className="alert error">{error}</div>}
- {tab==='overview'&&<Overview data={data}/>} {tab==='submit'&&<Submit data={data} reload={load}/>} {tab==='jobs'&&<Jobs data={data} reload={load}/>} {tab==='settings'&&data.user.role==='admin'&&<SettingsPanel initial={data.settings} reload={load}/>} {tab==='clients'&&data.user.role==='admin'&&<Clients data={data} reload={load}/>} </main>;
+export default function App() {
+  const [auth, setAuth] = useState(Boolean(getToken()));
+  const [data, setData] = useState<Bootstrap | null>(null);
+  const [error, setError] = useState('');
+  const [tab, setTab] = useState('overview');
+  const load = useCallback(async () => {
+    try {
+      setData(await api.bootstrap());
+      setError('');
+    } catch (e: any) {
+      if (e.message.includes('Session')) {
+        setToken(null);
+        setAuth(false);
+      } else setError(e.message);
+    }
+  }, []);
+  useEffect(() => {
+    if (auth) return;
+    api
+      .refreshAuth()
+      .then(() => setAuth(true))
+      .catch(() => undefined);
+  }, [auth]);
+  useEffect(() => {
+    if (!auth) return;
+    load();
+    const socket = io(API_URL || undefined, { auth: { token: getToken() } });
+    socket.on('data:changed', load);
+    return () => {
+      socket.disconnect();
+    };
+  }, [auth, load]);
+  if (!auth) return <Login onLogin={() => setAuth(true)} />;
+  if (!data) return <div className="center">{error || 'Loading CI360 Job Board...'}</div>;
+  const tabs =
+    data.user.role === 'admin'
+      ? [
+          ['overview', 'Overview'],
+          ['submit', 'Submit a Job'],
+          ['jobs', 'All Jobs'],
+          ['settings', 'TAT Standards'],
+          ['clients', 'Manage Clients'],
+          ['support', 'Support Tickets'],
+        ]
+      : [
+          ['overview', 'Overview'],
+          ['submit', 'Submit a Job'],
+          ['jobs', 'My Jobs'],
+          ['support', 'Support Tickets'],
+        ];
+  const logout = async () => {
+    await api.logout();
+    setAuth(false);
+    setData(null);
+  };
+  return (
+    <main className="app">
+      <header>
+        <div>
+          <h1>
+            CI360<span>degrees</span>
+          </h1>
+          <p>Realtime Job Board</p>
+        </div>
+        <div className="identity">
+          Logged in as <b>{data.user.name}</b>
+          <button onClick={logout}>Log out</button>
+        </div>
+      </header>
+      <nav>
+        {tabs.map(([id, label]) => (
+          <button key={id} className={tab === id ? 'active' : ''} onClick={() => setTab(id)}>
+            {label}
+          </button>
+        ))}
+      </nav>
+      {error && <div className="alert error">{error}</div>}
+      {tab === 'overview' && <Overview data={data} />} {tab === 'submit' && <Submit data={data} reload={load} />}{' '}
+      {tab === 'jobs' && <Jobs data={data} reload={load} />}{' '}
+      {tab === 'settings' && data.user.role === 'admin' && <SettingsPanel initial={data.settings} reload={load} />}{' '}
+      {tab === 'clients' && data.user.role === 'admin' && <Clients data={data} reload={load} />}{' '}
+      {tab === 'support' && <SupportTickets data={data} reload={load} />}{' '}
+    </main>
+  );
 }
 
-function Login({onLogin}:{onLogin:()=>void}){const[id,setId]=useState('');const[password,setPassword]=useState('');const[error,setError]=useState('');const submit=async(e:React.FormEvent)=>{e.preventDefault();try{const r=await api.login(id,password);setToken(r.token);onLogin();}catch(err:any){setError(err.message);}};return <div className="login-shell"><form className="login-card" onSubmit={submit}><h1>CI360<span>degrees</span></h1><p>Job Board Sign In</p><label>ID<input value={id} onChange={e=>setId(e.target.value)} autoComplete="username"/></label><label>Password<input type="password" value={password} onChange={e=>setPassword(e.target.value)} autoComplete="current-password"/></label>{error&&<div className="alert error">{error}</div>}<button className="primary">Log in</button><small>Demo admin: ci360admin / CI360Demo#2026</small></form></div>}
+function Login({ onLogin }: { onLogin: () => void }) {
+  const [id, setId] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const r = await api.login(id, password);
+      setToken(r.token);
+      onLogin();
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+  return (
+    <div className="login-shell">
+      <form className="login-card" onSubmit={submit}>
+        <h1>
+          CI360<span>degrees</span>
+        </h1>
+        <p>Job Board Sign In</p>
+        <label>
+          ID
+          <input value={id} onChange={(e) => setId(e.target.value)} autoComplete="username" />
+        </label>
+        <label>
+          Password
+          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
+        </label>
+        {error && <div className="alert error">{error}</div>}
+        <button className="primary">Log in</button>
+        <small>First-time setup: run npm run create-admin to create the administrator account.</small>
+      </form>
+    </div>
+  );
+}
 
-function Overview({data}:{data:Bootstrap}){const pending=data.jobs.filter(j=>!['completed','cancelled'].includes(j.status));const complete=data.jobs.filter(j=>j.status==='completed');return <><section className="metrics"><Metric label="Active jobs" value={pending.length}/><Metric label="Completed" value={complete.length}/><Metric label="Urgent" value={pending.filter(j=>j.priority==='Urgent').length}/><Metric label="Clients" value={data.user.role==='admin'?data.clients.filter(c=>c.status==='active').length:1}/></section><section className="card"><h2>Current workload</h2><div className="load-grid">{data.settings.categories.map(c=>{const count=data.categoryLoad[c.name]||0;const pct=Math.min(100,count/Math.max(1,data.settings.capacityPerCategory)*100);return <div className="load" key={c.name}><b>{c.name}</b><div className="meter"><i style={{width:pct+'%'}}/></div><span>{count} active / capacity {data.settings.capacityPerCategory}</span></div>})}</div></section><section className="card"><h2>Recently updated</h2><div className="jobs">{data.jobs.slice(0,6).map(j=><JobCard key={j.id} job={j} data={data}/>)}</div></section></>}
-function Metric({label,value}:{label:string;value:number}){return <div className="metric"><span>{label}</span><strong>{value}</strong></div>}
+function Overview({ data }: { data: Bootstrap }) {
+  const pending = data.jobs.filter((j) => !['completed', 'cancelled'].includes(j.status));
+  const complete = data.jobs.filter((j) => j.status === 'completed');
+  return (
+    <>
+      <section className="metrics">
+        <Metric label="Active jobs" value={pending.length} />
+        <Metric label="Completed" value={complete.length} />
+        <Metric label="Urgent" value={pending.filter((j) => j.priority === 'Urgent').length} />
+        <Metric label="Clients" value={data.user.role === 'admin' ? data.clients.filter((c) => c.status === 'active').length : 1} />
+      </section>
+      <section className="card">
+        <h2>Current workload</h2>
+        <div className="load-grid">
+          {data.settings.categories.map((c) => {
+            const count = data.categoryLoad[c.name] || 0;
+            const pct = Math.min(100, (count / Math.max(1, data.settings.capacityPerCategory)) * 100);
+            return (
+              <div className="load" key={c.name}>
+                <b>{c.name}</b>
+                <div className="meter">
+                  <i style={{ width: pct + '%' }} />
+                </div>
+                <span>
+                  {count} active / capacity {data.settings.capacityPerCategory}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+      <section className="card">
+        <h2>Recently updated</h2>
+        <div className="jobs">
+          {data.jobs.slice(0, 6).map((j) => (
+            <JobCard key={j.id} job={j} data={data} />
+          ))}
+        </div>
+      </section>
+    </>
+  );
+}
+function Metric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="metric">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
 
-function Submit({data,reload}:{data:Bootstrap;reload:()=>Promise<void>}){const first=data.settings.categories[0]?.name||'';const[form,setForm]=useState({clientId:data.clients.find(c=>c.status==='active')?.id||'',title:'',description:'',category:first,priority:'Medium',postedBy:'',assetLink:''});const[message,setMessage]=useState('');const submit=async(e:React.FormEvent)=>{e.preventDefault();try{await api.createJob(form);setMessage('Job submitted successfully. All logged-in users will receive the update instantly.');setForm({...form,title:'',description:'',postedBy:'',assetLink:''});await reload();}catch(err:any){setMessage(err.message)}};return <form className="card form" onSubmit={submit}><h2>New job request</h2>{message&&<div className="alert">{message}</div>}{data.user.role==='admin'&&<label>Client<select value={form.clientId} onChange={e=>setForm({...form,clientId:e.target.value})}>{data.clients.filter(c=>c.status==='active').map(c=><option value={c.id} key={c.id}>{c.name}</option>)}</select></label>}<label>Job title<input required value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/></label><label>Description<textarea value={form.description} onChange={e=>setForm({...form,description:e.target.value})}/></label><div className="row"><label>Category<select value={form.category} onChange={e=>setForm({...form,category:e.target.value})}>{data.settings.categories.map(c=><option key={c.name}>{c.name}</option>)}</select></label><label>Priority<select value={form.priority} onChange={e=>setForm({...form,priority:e.target.value})}><option>Low</option><option>Medium</option><option>High</option><option>Urgent</option></select></label></div><label>Asset link<input value={form.assetLink} onChange={e=>setForm({...form,assetLink:e.target.value})} placeholder="Google Drive, Dropbox or another secure URL"/></label><label>Posted by<input required value={form.postedBy} onChange={e=>setForm({...form,postedBy:e.target.value})}/></label><button className="primary">Submit job</button></form>}
+function Submit({ data, reload }: { data: Bootstrap; reload: () => Promise<void> }) {
+  const first = data.settings.categories[0]?.name || '';
+  const [form, setForm] = useState({
+    clientId: data.clients.find((c) => c.status === 'active')?.id || '',
+    title: '',
+    description: '',
+    category: first,
+    priority: 'Medium',
+    postedBy: '',
+    assetLink: '',
+  });
+  const [message, setMessage] = useState('');
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await api.createJob(form);
+      setMessage('Job submitted successfully. All logged-in users will receive the update instantly.');
+      setForm({ ...form, title: '', description: '', postedBy: '', assetLink: '' });
+      await reload();
+    } catch (err: any) {
+      setMessage(err.message);
+    }
+  };
+  return (
+    <form className="card form" onSubmit={submit}>
+      <h2>New job request</h2>
+      {message && <div className="alert">{message}</div>}
+      {data.user.role === 'admin' && (
+        <label>
+          Client
+          <select value={form.clientId} onChange={(e) => setForm({ ...form, clientId: e.target.value })}>
+            {data.clients
+              .filter((c) => c.status === 'active')
+              .map((c) => (
+                <option value={c.id} key={c.id}>
+                  {c.name}
+                </option>
+              ))}
+          </select>
+        </label>
+      )}
+      <label>
+        Job title
+        <input required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+      </label>
+      <label>
+        Description
+        <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+      </label>
+      <div className="row">
+        <label>
+          Category
+          <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
+            {data.settings.categories.map((c) => (
+              <option key={c.name}>{c.name}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Priority
+          <select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}>
+            <option>Low</option>
+            <option>Medium</option>
+            <option>High</option>
+            <option>Urgent</option>
+          </select>
+        </label>
+      </div>
+      <label>
+        Asset link
+        <input
+          value={form.assetLink}
+          onChange={(e) => setForm({ ...form, assetLink: e.target.value })}
+          placeholder="Google Drive, Dropbox or another secure URL"
+        />
+      </label>
+      <label>
+        Posted by
+        <input required value={form.postedBy} onChange={(e) => setForm({ ...form, postedBy: e.target.value })} />
+      </label>
+      <button className="primary">Submit job</button>
+    </form>
+  );
+}
 
-function Jobs({data,reload}:{data:Bootstrap;reload:()=>Promise<void>}){const[category,setCategory]=useState('');const[priority,setPriority]=useState('');const[status,setStatus]=useState('');const[client,setClient]=useState('');const filtered=useMemo(()=>data.jobs.filter(j=>(!category||j.category===category)&&(!priority||j.priority===priority)&&(!status||j.status===status)&&(!client||j.clientId===client)),[data.jobs,category,priority,status,client]);return <><div className="filters"><select value={category} onChange={e=>setCategory(e.target.value)}><option value="">All categories</option>{data.settings.categories.map(c=><option key={c.name}>{c.name}</option>)}</select><select value={priority} onChange={e=>setPriority(e.target.value)}><option value="">All priorities</option>{['Urgent','High','Medium','Low'].map(p=><option key={p}>{p}</option>)}</select><select value={status} onChange={e=>setStatus(e.target.value)}><option value="">All statuses</option>{Object.entries(statusLabels).map(([v,l])=><option value={v} key={v}>{l}</option>)}</select>{data.user.role==='admin'&&<select value={client} onChange={e=>setClient(e.target.value)}><option value="">All clients</option>{data.clients.map(c=><option value={c.id} key={c.id}>{c.name}</option>)}</select>}</div><div className="jobs">{filtered.map(j=><JobCard key={j.id} job={j} data={data} editable reload={reload}/>)}</div></>}
+function Jobs({ data, reload }: { data: Bootstrap; reload: () => Promise<void> }) {
+  const [category, setCategory] = useState('');
+  const [priority, setPriority] = useState('');
+  const [status, setStatus] = useState('');
+  const [client, setClient] = useState('');
+  const filtered = useMemo(
+    () =>
+      data.jobs.filter(
+        (j) =>
+          (!category || j.category === category) &&
+          (!priority || j.priority === priority) &&
+          (!status || j.status === status) &&
+          (!client || j.clientId === client),
+      ),
+    [data.jobs, category, priority, status, client],
+  );
+  return (
+    <>
+      <div className="filters">
+        <select value={category} onChange={(e) => setCategory(e.target.value)}>
+          <option value="">All categories</option>
+          {data.settings.categories.map((c) => (
+            <option key={c.name}>{c.name}</option>
+          ))}
+        </select>
+        <select value={priority} onChange={(e) => setPriority(e.target.value)}>
+          <option value="">All priorities</option>
+          {['Urgent', 'High', 'Medium', 'Low'].map((p) => (
+            <option key={p}>{p}</option>
+          ))}
+        </select>
+        <select value={status} onChange={(e) => setStatus(e.target.value)}>
+          <option value="">All statuses</option>
+          {Object.entries(statusLabels).map(([v, l]) => (
+            <option value={v} key={v}>
+              {l}
+            </option>
+          ))}
+        </select>
+        {data.user.role === 'admin' && (
+          <select value={client} onChange={(e) => setClient(e.target.value)}>
+            <option value="">All clients</option>
+            {data.clients.map((c) => (
+              <option value={c.id} key={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+      <div className="jobs">
+        {filtered.map((j) => (
+          <JobCard key={j.id} job={j} data={data} editable reload={reload} />
+        ))}
+      </div>
+    </>
+  );
+}
 
-function JobCard({job,data,editable=false,reload}:{job:Job;data:Bootstrap;editable?:boolean;reload?:()=>Promise<void>}){const[status,setStatus]=useState(job.status);const[hours,setHours]=useState(job.teamOverrideHours??job.calculatedHours);const[note,setNote]=useState(job.teamOverrideNote);const due=addWorkingHours(new Date(job.datePosted),job.teamOverrideHours??job.calculatedHours,data.settings);const client=data.clients.find(c=>c.id===job.clientId)?.name||job.clientId;const save=async()=>{await api.updateJob(job.id,{status,teamOverrideHours:Number(hours),teamOverrideNote:note});await reload?.();};return <article className={`job priority-${job.priority}`}><div className="job-head"><div><h3>{job.title}</h3><p>Posted by <b>{job.postedBy}</b> on {fmt(job.datePosted)}</p></div><div className="badges">{data.user.role==='admin'&&<span className="badge client">{client}</span>}<span className="badge category">{job.category}</span><span className={`badge ${job.priority}`}>{job.priority}</span><span className="badge status">{statusLabels[job.status]}</span></div></div>{job.description&&<p className="description">{job.description}</p>}{job.assetLink&&<a href={job.assetLink} target="_blank" rel="noreferrer">View assets ↗</a>}<p className="due">TAT: <b>{job.teamOverrideHours??job.calculatedHours} working hours</b> · due {fmt(due)}</p>{editable&&data.user.role==='admin'&&<div className="editbar"><select value={status} onChange={e=>setStatus(e.target.value as JobStatus)}>{Object.entries(statusLabels).map(([v,l])=><option value={v} key={v}>{l}</option>)}</select><input type="number" min="1" value={hours} onChange={e=>setHours(Number(e.target.value))}/><input value={note} onChange={e=>setNote(e.target.value)} placeholder="Team TAT note"/><button onClick={save}>Save</button></div>}</article>}
+function JobCard({ job, data, editable = false, reload }: { job: Job; data: Bootstrap; editable?: boolean; reload?: () => Promise<void> }) {
+  const [status, setStatus] = useState(job.status);
+  const [hours, setHours] = useState(job.teamOverrideHours ?? job.calculatedHours);
+  const [note, setNote] = useState(job.teamOverrideNote);
+  const due = addWorkingHours(new Date(job.datePosted), job.teamOverrideHours ?? job.calculatedHours, data.settings);
+  const client = data.clients.find((c) => c.id === job.clientId)?.name || job.clientId;
+  const save = async () => {
+    await api.updateJob(job.id, { status, teamOverrideHours: Number(hours), teamOverrideNote: note });
+    await reload?.();
+  };
+  return (
+    <article className={`job priority-${job.priority}`}>
+      <div className="job-head">
+        <div>
+          <h3>{job.title}</h3>
+          <p>
+            Posted by <b>{job.postedBy}</b> on {fmt(job.datePosted)}
+          </p>
+        </div>
+        <div className="badges">
+          {data.user.role === 'admin' && <span className="badge client">{client}</span>}
+          <span className="badge category">{job.category}</span>
+          <span className={`badge ${job.priority}`}>{job.priority}</span>
+          <span className="badge status">{statusLabels[job.status]}</span>
+        </div>
+      </div>
+      {job.description && <p className="description">{job.description}</p>}
+      {job.assetLink && (
+        <a href={job.assetLink} target="_blank" rel="noreferrer">
+          View assets ↗
+        </a>
+      )}
+      <p className="due">
+        TAT: <b>{job.teamOverrideHours ?? job.calculatedHours} working hours</b> · due {fmt(due)}
+      </p>
+      {editable && data.user.role === 'admin' && (
+        <div className="editbar">
+          <select value={status} onChange={(e) => setStatus(e.target.value as JobStatus)}>
+            {Object.entries(statusLabels).map(([v, l]) => (
+              <option value={v} key={v}>
+                {l}
+              </option>
+            ))}
+          </select>
+          <input type="number" min="1" value={hours} onChange={(e) => setHours(Number(e.target.value))} />
+          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Team TAT note" />
+          <button onClick={save}>Save</button>
+        </div>
+      )}
+    </article>
+  );
+}
 
-function SettingsPanel({initial,reload}:{initial:Settings;reload:()=>Promise<void>}){const[s,setS]=useState(initial);const save=async()=>{await api.saveSettings(s);await reload();alert('TAT standards saved.');};return <section className="card"><h2>TAT standards</h2>{s.categories.map((c,i)=><div className="setting-row" key={i}><input value={c.name} onChange={e=>setS({...s,categories:s.categories.map((x,n)=>n===i?{...x,name:e.target.value}:x)})}/><input type="number" min="1" value={c.baseHours} onChange={e=>setS({...s,categories:s.categories.map((x,n)=>n===i?{...x,baseHours:Number(e.target.value)}:x)})}/><button onClick={()=>setS({...s,categories:s.categories.filter((_,n)=>n!==i)})}>Remove</button></div>)}<button onClick={()=>setS({...s,categories:[...s.categories,{name:'New category',baseHours:24}]})}>+ Add category</button><div className="row"><label>Category capacity<input type="number" value={s.capacityPerCategory} onChange={e=>setS({...s,capacityPerCategory:Number(e.target.value)})}/></label><label>Extra hours over capacity<input type="number" value={s.bufferHoursPerExtraJob} onChange={e=>setS({...s,bufferHoursPerExtraJob:Number(e.target.value)})}/></label></div><div className="row"><label>Start hour<input type="number" step="0.5" value={s.startHour} onChange={e=>setS({...s,startHour:Number(e.target.value)})}/></label><label>End hour<input type="number" step="0.5" value={s.endHour} onChange={e=>setS({...s,endHour:Number(e.target.value)})}/></label></div><button className="primary" onClick={save}>Save standards</button></section>}
+function SettingsPanel({ initial, reload }: { initial: Settings; reload: () => Promise<void> }) {
+  const [s, setS] = useState(initial);
+  const save = async () => {
+    await api.saveSettings(s);
+    await reload();
+    alert('TAT standards saved.');
+  };
+  return (
+    <section className="card">
+      <h2>TAT standards</h2>
+      {s.categories.map((c, i) => (
+        <div className="setting-row" key={i}>
+          <input
+            value={c.name}
+            onChange={(e) => setS({ ...s, categories: s.categories.map((x, n) => (n === i ? { ...x, name: e.target.value } : x)) })}
+          />
+          <input
+            type="number"
+            min="1"
+            value={c.baseHours}
+            onChange={(e) =>
+              setS({ ...s, categories: s.categories.map((x, n) => (n === i ? { ...x, baseHours: Number(e.target.value) } : x)) })
+            }
+          />
+          <button onClick={() => setS({ ...s, categories: s.categories.filter((_, n) => n !== i) })}>Remove</button>
+        </div>
+      ))}
+      <button onClick={() => setS({ ...s, categories: [...s.categories, { name: 'New category', baseHours: 24 }] })}>+ Add category</button>
+      <div className="row">
+        <label>
+          Category capacity
+          <input
+            type="number"
+            value={s.capacityPerCategory}
+            onChange={(e) => setS({ ...s, capacityPerCategory: Number(e.target.value) })}
+          />
+        </label>
+        <label>
+          Extra hours over capacity
+          <input
+            type="number"
+            value={s.bufferHoursPerExtraJob}
+            onChange={(e) => setS({ ...s, bufferHoursPerExtraJob: Number(e.target.value) })}
+          />
+        </label>
+      </div>
+      <div className="row">
+        <label>
+          Start hour
+          <input type="number" step="0.5" value={s.startHour} onChange={(e) => setS({ ...s, startHour: Number(e.target.value) })} />
+        </label>
+        <label>
+          End hour
+          <input type="number" step="0.5" value={s.endHour} onChange={(e) => setS({ ...s, endHour: Number(e.target.value) })} />
+        </label>
+      </div>
+      <button className="primary" onClick={save}>
+        Save standards
+      </button>
+    </section>
+  );
+}
 
-function Clients({data,reload}:{data:Bootstrap;reload:()=>Promise<void>}){const[form,setForm]=useState({id:'',name:'',password:''});const create=async()=>{await api.createClient(form);setForm({id:'',name:'',password:''});await reload();};const update=async(id:string,patch:any)=>{await api.updateClient(id,patch);await reload();};return <section className="card"><h2>Manage clients</h2><div className="client-list">{data.clients.map(c=><div className="client-row" key={c.id}><div><b>{c.name}</b><span>{c.id} · {c.status}</span></div><button onClick={()=>{const password=prompt('Enter a new password (minimum 6 characters)');if(password)update(c.id,{password});}}>Reset password</button><button onClick={()=>update(c.id,{status:c.status==='active'?'archived':'active'})}>{c.status==='active'?'Archive':'Restore'}</button></div>)}</div><h3>Add client</h3><div className="row"><label>Client ID<input value={form.id} onChange={e=>setForm({...form,id:e.target.value.toLowerCase()})}/></label><label>Name<input value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></label><label>Temporary password<input value={form.password} onChange={e=>setForm({...form,password:e.target.value})}/></label></div><button className="primary" onClick={create}>Add client</button></section>}
+function Clients({ data, reload }: { data: Bootstrap; reload: () => Promise<void> }) {
+  const [form, setForm] = useState({ id: '', name: '', password: '', confirmPassword: '' });
+  const [passwords, setPasswords] = useState<Record<string, string>>({});
+  const [confirmPasswords, setConfirmPasswords] = useState<Record<string, string>>({});
+  const [message, setMessage] = useState('');
+  const create = async () => {
+    try {
+      await api.createClient(form);
+      setForm({ id: '', name: '', password: '', confirmPassword: '' });
+      setMessage('Client added.');
+      await reload();
+    } catch (err: any) {
+      setMessage(err.message);
+    }
+  };
+  const update = async (id: string, patch: any) => {
+    await api.updateClient(id, patch);
+    await reload();
+  };
+  const resetPassword = async (id: string) => {
+    const password = (passwords[id] || '').trim();
+    const confirmPassword = (confirmPasswords[id] || '').trim();
+    if (password.length < 12) {
+      setMessage('Enter a new password with at least 12 characters.');
+      return;
+    }
+    if (password !== confirmPassword) {
+      setMessage('Password confirmation does not match.');
+      return;
+    }
+    try {
+      await update(id, { password, confirmPassword });
+      setPasswords((current) => ({ ...current, [id]: '' }));
+      setConfirmPasswords((current) => ({ ...current, [id]: '' }));
+      setMessage('Password reset successfully.');
+    } catch (err: any) {
+      setMessage(err.message);
+    }
+  };
+  const toggleClient = async (id: string, status: 'active' | 'archived') => {
+    const next = status === 'active' ? 'archived' : 'active';
+    try {
+      await update(id, { status: next });
+      setMessage(next === 'archived' ? 'Client removed.' : 'Client restored.');
+    } catch (err: any) {
+      setMessage(err.message);
+    }
+  };
+  return (
+    <section className="card">
+      <h2>Manage clients</h2>
+      <p className="muted">Each client logs in with their own ID and password, and only sees their own jobs.</p>
+      {message && <div className="alert">{message}</div>}
+      <div className="client-table-wrap">
+        <table className="client-table">
+          <thead>
+            <tr>
+              <th>Client ID</th>
+              <th>Name</th>
+              <th>Status</th>
+              <th>New Password</th>
+              <th>Confirm Password</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.clients.map((c) => (
+              <tr key={c.id}>
+                <td>
+                  <b>{c.id}</b>
+                </td>
+                <td>{c.name}</td>
+                <td>
+                  <span className={`status-pill ${c.status}`}>{c.status}</span>
+                </td>
+                <td>
+                  <input
+                    type="password"
+                    value={passwords[c.id] || ''}
+                    onChange={(e) => setPasswords((current) => ({ ...current, [c.id]: e.target.value }))}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') resetPassword(c.id);
+                    }}
+                    placeholder="12+ chars, mixed types"
+                    aria-label={`New password for ${c.name}`}
+                  />
+                </td>
+                <td>
+                  <input
+                    type="password"
+                    value={confirmPasswords[c.id] || ''}
+                    onChange={(e) => setConfirmPasswords((current) => ({ ...current, [c.id]: e.target.value }))}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') resetPassword(c.id);
+                    }}
+                    placeholder="repeat password"
+                    aria-label={`Confirm password for ${c.name}`}
+                  />
+                </td>
+                <td>
+                  <div className="client-actions">
+                    <button type="button" className="primary small" onClick={() => resetPassword(c.id)}>
+                      Reset Password
+                    </button>
+                    <button
+                      type="button"
+                      className={c.status === 'active' ? 'danger small' : 'small'}
+                      onClick={() => toggleClient(c.id, c.status)}
+                    >
+                      {c.status === 'active' ? 'Remove' : 'Restore'}
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <h3>Add client</h3>
+      <div className="row">
+        <label>
+          Client ID
+          <input value={form.id} onChange={(e) => setForm({ ...form, id: e.target.value.toLowerCase() })} />
+        </label>
+        <label>
+          Name
+          <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+        </label>
+        <label>
+          Temporary password
+          <input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+        </label>
+        <label>
+          Confirm password
+          <input type="password" value={form.confirmPassword} onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })} />
+        </label>
+      </div>
+      <button type="button" className="primary" onClick={create}>
+        + Add client
+      </button>
+    </section>
+  );
+}

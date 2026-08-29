@@ -5,15 +5,15 @@ export default defineConfig({
   plugins: [react()],
   build: {
     outDir: '../server/dist/public',
-    emptyOutDir: true
+    emptyOutDir: true,
   },
   server: {
     proxy: {
       '/api': 'http://localhost:4000',
       '/socket.io': {
         target: 'http://localhost:4000',
-        ws: true
-      }
-    }
-  }
+        ws: true,
+      },
+    },
+  },
 });
