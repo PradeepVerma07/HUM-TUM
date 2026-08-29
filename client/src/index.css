@@ -1,0 +1,67 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
+}
+
+body {
+  background-color: #f0f2f5;
+  color: #111b21;
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+}
+
+/* WhatsApp Doodle Chat Wallpaper */
+.whatsapp-chat-bg {
+  background-color: #efeae2;
+  background-image: radial-gradient(#d5ceb8 1px, transparent 1px), radial-gradient(#d5ceb8 1px, #efeae2 1px);
+  background-size: 24px 24px;
+  background-position: 0 0, 12px 12px;
+}
+
+/* WhatsApp Message Bubbles */
+.bubble-sent {
+  background-color: #d9fdd3;
+  border-radius: 8px 8px 0px 8px;
+  box-shadow: 0 1px 0.5px rgba(11, 20, 26, 0.13);
+}
+
+.bubble-received {
+  background-color: #ffffff;
+  border-radius: 8px 8px 8px 0px;
+  box-shadow: 0 1px 0.5px rgba(11, 20, 26, 0.13);
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #ced0d1;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #aebac1;
+}
+
+/* Hide scrollbar utility */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

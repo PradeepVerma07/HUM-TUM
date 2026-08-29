@@ -1,63 +1,74 @@
-# CI360 Realtime Job Board
+# HUM–TUM 💜 (WhatsApp Clone)
 
-React + TypeScript frontend, Express + TypeScript API, SQLite persistence, Socket.IO updates, client/admin roles, job management, client management and support tickets.
+**HUM–TUM** is a pure JavaScript (React JS + Node.js) full-stack WhatsApp Clone designed for **Hostinger Shared Hosting** with **Hostinger MySQL** database support.
 
-## Local Setup
+---
 
+## 🌟 Core Features
+
+- **💬 WhatsApp Dual-Pane Layout**: Desktop two-panel layout (Left: conversations list, status stories, search; Right: active chat room with doodle background, message tails & blue double ticks).
+- **🚀 Pure JavaScript (No TypeScript)**: No `tsc` compilers, no `@types/*`, zero compilation overhead on Hostinger.
+- **⚡ Real-Time Socket.IO**: Instant messaging, live typing indicators, and online/offline presence updates.
+- **🗄️ Hostinger MySQL Native**: Powered by `mysql2/promise` with auto-table initialization (`humtum_*` tables) and seamless in-memory fallback.
+- **📸 24-Hour Stories & Statuses**: Disappearing status updates with full-screen auto-advancing viewer.
+- **📞 Audio & Video Calling**: In-app WebRTC incoming and active call HUD overlays.
+- **📱 Responsive Mobile Experience**: Automatic full-width single pane view on mobile screens.
+
+---
+
+## 🛠️ Local Development
+
+```bash
+# 1. Install dependencies
+npm install
+
+# 2. Build client
+npm run build
+
+# 3. Start full-stack server
+npm start
+```
+
+Open `http://localhost:3000` in your browser.
+
+---
+
+## 🌐 Hostinger Shared Hosting Deployment
+
+### Step 1: Connect via SSH
+```bash
+ssh -p 65002 u245050038@31.97.225.216
+cd ~/domains/humtum.webtrionix.com/public_html
+```
+
+### Step 2: Pull Latest Code
+```bash
+git pull origin main
+```
+
+### Step 3: Install & Build
 ```bash
 npm install
-copy server\.env.example server\.env
-npm run migrate
-npm run create-admin
-npm run dev
-```
-
-Frontend: http://localhost:5173  
-API: http://localhost:4000
-
-## Production Setup
-
-1. Set all required environment variables from `.env.example`.
-2. Generate a 64-character random `JWT_SECRET`; do not reuse the sample value.
-3. Run `npm ci`.
-4. Run `npm run migrate`.
-5. Run `npm run create-admin` once.
-6. Run `npm run build`.
-7. Start with `npm run start`.
-
-Demo users are not created automatically. Development sample clients/jobs can only be created with:
-
-```bash
-npm run seed:demo
-```
-
-That command refuses to run when `NODE_ENV=production`.
-
-## Commands
-
-```bash
-npm run dev
 npm run build
-npm run start
-npm run migrate
-npm run migrate:status
-npm run create-admin
-npm run seed:demo
-npm run lint
-npm run format:check
-npm run typecheck
-npm run test
-npm run test:integration
-npm run test:e2e
 ```
 
-## Health Checks
+### Step 4: Configure Database in `.env`
+Create or update `.env` in the project root:
+```env
+PORT=3000
+NODE_ENV=production
+CLIENT_URL=https://humtum.webtrionix.com
 
-- `GET /health/live`
-- `GET /health/ready`
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=u245050038_humtum
+DB_PASSWORD=YourHostingerDbPassword
+DB_NAME=u245050038_humtum
+JWT_SECRET=humtum_jwt_secret_key_2026
+```
 
-## Notes
-
-The current database adapter is SQLite. The production checklist references MySQL fields; those are documented in `.env.example` for a future adapter migration, but this pass preserves the existing SQLite implementation.
-
-Support ticket attachments are stored in private local storage under `UPLOAD_DIR`, with metadata in SQLite and authorised downloads through the backend.
+### Step 5: Start or Restart Application
+```bash
+npm start
+```
+Or restart the Node.js Web App directly from your **Hostinger hPanel Dashboard**.
